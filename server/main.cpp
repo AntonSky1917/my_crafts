@@ -1,6 +1,9 @@
 #include <iostream>
 #include <dlfcn.h>
 #include <vector>
+#include <array>
+#include <utility>
+#include <mutex>
 #include <thread>
 #include <unistd.h>
 #include <cstring>
