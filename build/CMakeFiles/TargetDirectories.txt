@@ -1,0 +1,8 @@
+/Users/anton_root/Desktop/STLibraryChat/build/CMakeFiles/edit_cache.dir
+/Users/anton_root/Desktop/STLibraryChat/build/CMakeFiles/rebuild_cache.dir
+/Users/anton_root/Desktop/STLibraryChat/build/server/CMakeFiles/myserver.dir
+/Users/anton_root/Desktop/STLibraryChat/build/server/CMakeFiles/edit_cache.dir
+/Users/anton_root/Desktop/STLibraryChat/build/server/CMakeFiles/rebuild_cache.dir
+/Users/anton_root/Desktop/STLibraryChat/build/client/CMakeFiles/myclient.dir
+/Users/anton_root/Desktop/STLibraryChat/build/client/CMakeFiles/edit_cache.dir
+/Users/anton_root/Desktop/STLibraryChat/build/client/CMakeFiles/rebuild_cache.dir

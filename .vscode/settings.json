@@ -71,6 +71,7 @@
         "__verbose_abort": "cpp",
         "condition_variable": "cpp",
         "*.tcc": "cpp",
-        "concepts": "cpp"
+        "concepts": "cpp",
+        "shared_mutex": "cpp"
     }
 }
