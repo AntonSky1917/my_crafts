@@ -1,30 +1,14 @@
-#include <stdio.h>
-#include <unistd.h>
+#include <iostream>
 #include <dlfcn.h>
-#include <fcntl.h>
-#include <string.h>
-#include <stdlib.h>
-#include <ctype.h>
-#include <sys/socket.h>
-#include <sys/select.h>
-#include <sys/time.h>
+#include <vector>
+#include <thread>
+#include <unistd.h>
+#include <cstring>
 #include <arpa/inet.h>
 #include <netinet/in.h>
-#include <signal.h>
-#include <pthread.h>
-#include <vector>
-#include <string>
-#include <cstring>
-#include <iostream>
-#include <sstream>
-#include <algorithm>
-#include <stdexcept>
-#include <thread>
-#include <functional>
-#include <poll.h>
-#include <cstdlib>
-#include <cerrno>
-#include <mutex>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <memory>
 
 class User {
 public:
@@ -33,13 +17,13 @@ public:
     std::string password;
 
     User(int socket, const std::string& name, const std::string& password)
-        : socket(socket), name(name), password(password)
+        : socket(socket), name(std::move(name)), password(std::move(password))
     {
     }
 };
 
 // определяем глобальные переменные
-std::vector<User*> users;
+std::vector<std::shared_ptr<User>> users;
 std::mutex usersMutex;
 
 // функция выполняет поиск пользователя по имени в векторе users.
@@ -60,37 +44,37 @@ void sendMessage(int socket, const std::string& message) {
 }
 
 std::string receiveMessage(int client_socket) {
+    constexpr std::size_t bufferSize = 4096;
+    std::array<char, bufferSize> buffer;
     std::string message;
 
     for (;;) {
-        char c = 0;
-        int nbytes = recv(client_socket, &c, 1, 0);
+        ssize_t nbytes = recv(client_socket, buffer.data(), 1, 0);
         if (nbytes < 0)
             return "";
 
-        if (nbytes == 1 && c != '\n')               
+        char c = buffer[0];
+
+        if (nbytes == 1 && c != '\n')
             message.append(&c, 1);
 
-        if (c == '\n')                                
+        if (c == '\n')
             break;
     }
     return message;
 }
 
-// функция разделяет строку str на подстроки, используя разделитель delimiter, и возвращает вектор подстрок.
-// в худшем случае имеет линейную сложность O(n), где n - длина строки str.
-std::vector<std::string> split(const std::string& str, const std::string& delimiter) {
-    std::vector<std::string> tokens; // создаем пустой вектор подстрок
+// функция разделяет строку str на подстроки, используя разделитель delimiter
+void split(const std::string& str, char delimiter, std::vector<std::string>& tokens) {
     size_t start = 0; // инициализируем переменную start
     size_t end = str.find(delimiter); // end инициализируется с помощью функции find(delimiter), которая находит позицию первого вхождения разделителя delimiter в строке str.
     while (end != std::string::npos) { // выполняется цикл, который продолжается до тех пор, пока end не станет равным std::string::npos  - это означает, что разделитель больше не найден.
-        // c помощью функции substr() извлекается подстрока от позиции start до позиции end - start, и эта подстрока добавляется в вектор tokens с помощью функции push_back().
-        tokens.push_back(str.substr(start, end - start));
-        start = end + delimiter.length(); // start устанавливается на позицию, следующую сразу за найденным разделителем (end + delimiter.length()).
+        // c помощью функции substr() извлекается подстрока от позиции start до позиции end - start, и эта подстрока добавляется в вектор tokens с помощью функции emplace_back().
+        tokens.emplace_back(str.substr(start, end - start));
+        start = end + 1; // start устанавливается на позицию, следующую сразу за найденным разделителем (end + 1).
         end = str.find(delimiter, start); // переменная end обновляется с помощью функции find(delimiter, start), чтобы найти следующее вхождение разделителя после позиции start.
     }
-    tokens.push_back(str.substr(start, end)); // после выхода из цикла добавляется последняя подстрока, начиная с позиции start, с помощью функции push_back().
-    return tokens; // возвращается вектор tokens, содержащий все разделенные подстроки.
+    tokens.emplace_back(str.substr(start)); // после выхода из цикла добавляется последняя подстрока, начиная с позиции start, с помощью функции emplace_back().
 }
 
 // функция выполняет проверку имени пользователя и пароля.
@@ -128,8 +112,8 @@ void cmd_register(int socket, const std::string& name, const std::string& passwo
 
     {
         std::lock_guard<std::mutex> l(usersMutex);
-        users.push_back(new User(socket, name, password)); // если пользователь с заданным именем не найден, создается новый объект User с использованием переданных параметров socket, name и password.
-        // созданный объект User добавляется в конец вектора users с помощью push_back().
+        // если пользователь с заданным именем не найден, создается новый объект User с использованием переданных параметров socket, name и password.
+        users.emplace_back(std::make_shared<User>(std::move(socket), std::move(name), std::move(password)));
     }
 
     std::cout << "To Client: STATUS_REGISTERED_SUCCESSFULL" << std::endl;
@@ -167,7 +151,7 @@ void cmd_broadcast(int socket, const std::string& sender, const std::string& tex
 
     for (int s : tosend) { // итерируемся по всем сокетам в векторе tosend.
         if (s != socket) // если сокет не совпадает с отправителем.
-            sendMessage(s, message); // вызываем sendMessage и отправляем сообщение каждому сокету.
+            sendMessage(s, std::move(message)); // вызываем sendMessage и отправляем сообщение каждому сокету.
     }
     sendMessage(socket, "BROADCAST_SENT");
 }
@@ -187,8 +171,10 @@ void handle_user(int client_socket)
         if (command.length() == 0) // если длинна = 0 то завершаем обработку пользователя.
             break;
 
-        std::vector<std::string> tokens = split(command, "|"); // полученная команда разбивается на токены с использованием функции split которая возвращает вектор строк.
-        if (tokens.empty()) { // если вектор пуст то,
+        std::vector<std::string> tokens;
+        split(command, '|', tokens); // Используем измененную функцию split с символом '|' в качестве разделителя
+
+        if (tokens.size() == 0) { // Изменили условие проверки на пустоту вектора
             std::cout << "Invalid command" << std::endl;
             continue;
         }
@@ -233,7 +219,7 @@ void handle_user(int client_socket)
     // Но! Точно ли мы должны удалять пользователя? я использую std::remove_if() она перемещает элементы, удовлетворяющие условию, в конец вектора, но не изменяет его размер.
     {
         std::lock_guard<std::mutex> l(usersMutex);
-        std::remove_if(users.begin(), users.end(), [socket](const User* user) {
+        std::remove_if(users.begin(), users.end(), [socket](const std::shared_ptr<User>& user) {
             return user->socket == socket;
         });
     }
@@ -244,7 +230,6 @@ void handle_user(int client_socket)
 // функция представляет основной цикл сервера, который принимает подключения от клиентов и запускает потоки для обработки каждого подключения.
 int main(int argc, char *argv[])
 {   
-    int fd = STDOUT_FILENO; // переменная fd устанавливается в файловый дескриптор для стандартного вывода.
     int port = 8080;
 
     if (argc >= 2) {
